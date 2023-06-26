@@ -321,7 +321,10 @@ module mp_thompson
                               is_aerosol_aware,                    &
                               merra2_aerosol_aware, nc, nwfa, nifa,&
                               nwfa2d, nifa2d, aero_ind_fdb,        &
-                              tgrs, prsl, phii, omega,             &
+                              tgrs,                                &
+                              spechums, qcs, qrs, qis, qss, qgs,   &
+                              nis, nrs, ncs, nwfas, nifas, tgrss,  &
+                              prsl, phii, omega,                   &
                               sedi_semi, decfl, islmsk, dtp,       &
                               dt_inner,                            &
                               first_time_step, istep, nsteps,      &
@@ -356,18 +359,30 @@ module mp_thompson
          real(kind_phys),           intent(inout) :: qg(:,:)
          real(kind_phys),           intent(inout) :: ni(:,:)
          real(kind_phys),           intent(inout) :: nr(:,:)
+         real(kind_phys),           intent(in) :: spechums(:,:)
+         real(kind_phys),           intent(in) :: qcs(:,:)
+         real(kind_phys),           intent(in) :: qrs(:,:)
+         real(kind_phys),           intent(in) :: qis(:,:)
+         real(kind_phys),           intent(in) :: qss(:,:)
+         real(kind_phys),           intent(in) :: qgs(:,:)
+         real(kind_phys),           intent(in) :: nis(:,:)
+         real(kind_phys),           intent(in) :: nrs(:,:)
          ! Aerosols
          logical,                   intent(in)    :: is_aerosol_aware, fullradar_diag 
          logical,                   intent(in)    :: merra2_aerosol_aware
          real(kind_phys), optional, intent(inout) :: nc(:,:)
          real(kind_phys), optional, intent(inout) :: nwfa(:,:)
          real(kind_phys), optional, intent(inout) :: nifa(:,:)
+         real(kind_phys), optional, intent(in   ) :: ncs(:,:)
+         real(kind_phys), optional, intent(in   ) :: nwfas(:,:)
+         real(kind_phys), optional, intent(in   ) :: nifas(:,:)
          real(kind_phys), optional, intent(in   ) :: nwfa2d(:)
          real(kind_phys), optional, intent(in   ) :: nifa2d(:)
          real(kind_phys),           intent(in)    :: aerfld(:,:,:)
          logical,         optional, intent(in   ) :: aero_ind_fdb
          ! State variables and timestep information
          real(kind_phys),           intent(inout) :: tgrs(:,:)
+         real(kind_phys),           intent(in)    :: tgrss(:,:)
          real(kind_phys),           intent(in   ) :: prsl(:,:)
          real(kind_phys),           intent(in   ) :: phii(:,:)
          real(kind_phys),           intent(in   ) :: omega(:,:)
@@ -421,11 +436,11 @@ module mp_thompson
          real(kind_phys) :: dtstep
          integer         :: ndt
          ! Air density
-         real(kind_phys) :: rho(1:ncol,1:nlev)              !< kg m-3
+!         real(kind_phys) :: rho(1:ncol,1:nlev)              !< kg m-3
          ! Water vapor mixing ratio (instead of specific humidity)
          real(kind_phys) :: qv(1:ncol,1:nlev)               !< kg kg-1
          ! Vertical velocity and level width
-         real(kind_phys) :: w(1:ncol,1:nlev)                !< m s-1
+!         real(kind_phys) :: w(1:ncol,1:nlev)                !< m s-1
          real(kind_phys) :: dz(1:ncol,1:nlev)               !< m
          ! Rain/snow/graupel fall amounts
          real(kind_phys) :: rain_mp(1:ncol)                 ! mm, dummy, not used
@@ -574,6 +589,7 @@ module mp_thompson
 
            ni = ni/(1.0_kind_phys-spechum)
            nr = nr/(1.0_kind_phys-spechum)
+
            if (is_aerosol_aware) then
               nc = nc/(1.0_kind_phys-spechum)
               nwfa = nwfa/(1.0_kind_phys-spechum)
@@ -583,10 +599,10 @@ module mp_thompson
          ! *DH
 
          !> - Density of air in kg m-3
-         rho = con_eps*prsl/(con_rd*tgrs*(qv+con_eps))
+!         rho = con_eps*prsl/(con_rd*tgrs*(qv+con_eps))
 
          !> - Convert omega in Pa s-1 to vertical velocity w in m s-1
-         w = -omega/(rho*con_g)
+!         w = -omega/(rho*con_g)
 
          !> - Layer width in m from geopotential in m2 s-2
          dz = (phii(:,2:nlev+1) - phii(:,1:nlev)) / con_g
@@ -688,8 +704,11 @@ module mp_thompson
          if (is_aerosol_aware .or. merra2_aerosol_aware) then
             call mp_gt_driver(qv=qv, qc=qc, qr=qr, qi=qi, qs=qs, qg=qg, ni=ni, nr=nr,        &
                               nc=nc, nwfa=nwfa, nifa=nifa, nwfa2d=nwfa2d, nifa2d=nifa2d,     &
-                              tt=tgrs, p=prsl, w=w, dz=dz, dt_in=dtstep, dt_inner=dt_inner,  &
-                              sedi_semi=sedi_semi, decfl=decfl, lsm=islmsk,                  &
+                              qcs=qcs, qrs=qrs, qis=qis, qss=qss, qgs=qgs, nis=nis, nrs=nrs, &
+                              ncs=ncs, nwfas=nwfas, nifas=nifas,tts=tgrss, spechums=spechums,&
+                              convert_dry_rho=convert_dry_rho, tt=tgrs,                      &
+                              p=prsl, omega=omega, dz=dz, dt_in=dtstep, dt_inner=dt_inner,   &
+                              con_g=con_g, sedi_semi=sedi_semi, decfl=decfl, lsm=islmsk,     &
                               rainnc=rain_mp, rainncv=delta_rain_mp,                         &
                               snownc=snow_mp, snowncv=delta_snow_mp,                         &
                               icenc=ice_mp, icencv=delta_ice_mp,                             &
@@ -725,11 +744,14 @@ module mp_thompson
                               tprv_rev=tprv_rev, tten3=tten3,                                &
                               qvten3=qvten3, qrten3=qrten3, qsten3=qsten3, qgten3=qgten3,    &
                               qiten3=qiten3, niten3=niten3, nrten3=nrten3, ncten3=ncten3,    &
-                              qcten3=qcten3, pfils=pfils, pflls=pflls)
+                              qcten3=qcten3, pfils=pfils,pflls=pflls, blkno=blkno)
          else
             call mp_gt_driver(qv=qv, qc=qc, qr=qr, qi=qi, qs=qs, qg=qg, ni=ni, nr=nr,        &
-                              tt=tgrs, p=prsl, w=w, dz=dz, dt_in=dtstep, dt_inner=dt_inner,  &
-                              sedi_semi=sedi_semi, decfl=decfl, lsm=islmsk,                  &
+                              qcs=qcs, qrs=qrs, qis=qis, qss=qss, qgs=qgs, nis=nis,          &
+                              nrs=nrs, tts=tgrss, spechums=spechums,                         &
+                              convert_dry_rho=convert_dry_rho, tt=tgrs,                      &
+                              p=prsl, omega=omega, dz=dz, dt_in=dtstep, dt_inner=dt_inner,   &
+                              con_g=con_g, sedi_semi=sedi_semi, decfl=decfl, lsm=islmsk,     &
                               rainnc=rain_mp, rainncv=delta_rain_mp,                         &
                               snownc=snow_mp, snowncv=delta_snow_mp,                         &
                               icenc=ice_mp, icencv=delta_ice_mp,                             &
@@ -764,7 +786,7 @@ module mp_thompson
                               tprv_rev=tprv_rev, tten3=tten3,                                &
                               qvten3=qvten3, qrten3=qrten3, qsten3=qsten3, qgten3=qgten3,    &
                               qiten3=qiten3, niten3=niten3, nrten3=nrten3, ncten3=ncten3,    &
-                              qcten3=qcten3, pfils=pfils, pflls=pflls)
+                              qcten3=qcten3, pfils=pfils, pflls=pflls, blkno=blkno)
          end if
          if (errflg/=0) return
 

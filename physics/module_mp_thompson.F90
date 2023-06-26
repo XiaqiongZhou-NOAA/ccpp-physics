@@ -982,9 +982,11 @@ MODULE module_mp_thompson
 !> @{
       SUBROUTINE mp_gt_driver(qv, qc, qr, qi, qs, qg, ni, nr, nc,     &
                               nwfa, nifa, nwfa2d, nifa2d,             &
-                              tt, th, pii,                            &
-                              p, w, dz, dt_in, dt_inner,              &
-                              sedi_semi, decfl, lsm,                  &
+                              qcs, qrs, qis, qss, qgs, nis, nrs, ncs, &
+                              nwfas, nifas, tts, spechums,            &
+                              convert_dry_rho, tt, th, pii,           &
+                              p, omega, dz, dt_in, dt_inner,          &
+                              con_g, sedi_semi, decfl, lsm,           &
                               RAINNC, RAINNCV,                        &
                               SNOWNC, SNOWNCV,                        &
                               ICENC, ICENCV,                          &
@@ -1022,7 +1024,7 @@ MODULE module_mp_thompson
                               tprr_rcs, tprv_rev, tten3, qvten3,      &
                               qrten3, qsten3, qgten3, qiten3, niten3, &
                               nrten3, ncten3, qcten3,                 &
-                              pfils, pflls)
+                              pfils, pflls, blkno)
 
       implicit none
 
@@ -1032,12 +1034,20 @@ MODULE module_mp_thompson
                             its,ite, jts,jte, kts,kte
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(INOUT):: &
                           qv, qc, qr, qi, qs, qg, ni, nr
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN):: &
+                          qcs, qrs, qis, qss, qgs, nis, nrs
+      integer,                   intent(in)    :: blkno
+
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(INOUT):: &
                           tt, th
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(IN):: &
+                          tts, spechums
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(IN):: &
                           pii
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(INOUT):: &
                           nc, nwfa, nifa
+      REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(IN):: &
+                          ncs, nwfas, nifas
       REAL, DIMENSION(ims:ime, jms:jme), OPTIONAL, INTENT(IN):: nwfa2d, nifa2d
       INTEGER, DIMENSION(ims:ime, jms:jme), INTENT(IN):: lsm
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), OPTIONAL, INTENT(INOUT):: &
@@ -1053,7 +1063,7 @@ MODULE module_mp_thompson
                           rainprod, evapprod
 #endif
       REAL, DIMENSION(ims:ime, kms:kme, jms:jme), INTENT(IN):: &
-                          p, w, dz
+                          p, omega, dz
       REAL, DIMENSION(ims:ime, jms:jme), INTENT(INOUT):: &
                           RAINNC, RAINNCV, SR
       REAL, DIMENSION(ims:ime, jms:jme), OPTIONAL, INTENT(INOUT)::      &
@@ -1066,8 +1076,11 @@ MODULE module_mp_thompson
                           vt_dbz_wt
       LOGICAL, INTENT(IN) :: first_time_step
       REAL, INTENT(IN):: dt_in, dt_inner
+      REAL(kind_phys),           INTENT(IN   ) :: con_g
+
       LOGICAL, INTENT(IN) :: sedi_semi
       INTEGER, INTENT(IN) :: decfl
+      LOGICAL, INTENT(IN) :: convert_dry_rho
       ! To support subcycling: current step and maximum number of steps
       INTEGER, INTENT (IN) :: istep, nsteps
       LOGICAL, INTENT (IN) :: fullradar_diag 
@@ -1111,6 +1124,9 @@ MODULE module_mp_thompson
                           tprr_rcs1, tprv_rev1,  tten1, qvten1,      &
                           qrten1, qsten1, qgten1, qiten1, niten1,    &
                           nrten1, ncten1, qcten1
+      REAL, DIMENSION(:,:,:), ALLOCATABLE::  dtt,dtqv, dtqc, dtqr, dtqi, dtqs, dtqg, dtni, dtnr
+      REAL, DIMENSION(:,:,:), ALLOCATABLE:: dtnc, dtnwfa, dtnifa
+      REAL, DIMENSION(:,:,:), ALLOCATABLE:: dtnwfa2d, dtnifa2d
 
       REAL, DIMENSION(kts:kte):: re_qc1d, re_qi1d, re_qs1d
 #if ( WRF_CHEM == 1 )
@@ -1276,7 +1292,75 @@ MODULE module_mp_thompson
           end select
         enddo
       endif
-
+      allocate (dtt(ims:ime,kms:kme,jms:jme))
+      allocate (dtqv(ims:ime,kms:kme,jms:jme))
+      allocate (dtqc(ims:ime,kms:kme,jms:jme))
+      allocate (dtqr(ims:ime,kms:kme,jms:jme))
+      allocate (dtqi(ims:ime,kms:kme,jms:jme))
+      allocate (dtqs(ims:ime,kms:kme,jms:jme))
+      allocate (dtqg(ims:ime,kms:kme,jms:jme))
+      allocate (dtni(ims:ime,kms:kme,jms:jme))
+      allocate (dtnr(ims:ime,kms:kme,jms:jme))
+      if (is_aerosol_aware .or. merra2_aerosol_aware) then
+         allocate (dtnc(ims:ime,kms:kme,jms:jme))
+         allocate (dtnwfa(ims:ime,kms:kme,jms:jme))
+         allocate (dtnifa(ims:ime,kms:kme,jms:jme))
+      endif
+     if (ndt .gt. 1) then
+       dtt=tt-tts
+       dtqv=qv-spechums/(1.0_kind_phys-spechums)
+       if (convert_dry_rho) then 
+        dtqc=qc-qcs/(1.0_kind_phys-spechums)
+        dtqr=qr-qrs/(1.0_kind_phys-spechums)
+        dtqi=qi-qis/(1.0_kind_phys-spechums)
+        dtqs=qs-qss/(1.0_kind_phys-spechums)
+        dtqg=qg-qgs/(1.0_kind_phys-spechums)
+        dtni=ni-nis/(1.0_kind_phys-spechums)
+        dtnr=nr-nrs/(1.0_kind_phys-spechums)
+       else
+        dtqc=qc-qcs
+        dtqr=qr-qrs
+        dtqi=qi-qis
+        dtqs=qs-qss
+        dtqg=qg-qgs
+        dtni=ni-nis
+        dtnr=nr-nrs
+       endif
+       tt=tts
+       qv=spechums/(1.0_kind_phys-spechums)
+       qc=qcs
+       qr=qrs
+       qi=qis
+       qs=qss
+       qg=qgs
+       ni=nis
+       nr=nrs
+       
+       if (is_aerosol_aware .or. merra2_aerosol_aware) then
+         dtnc=nc-ncs
+         dtnwfa=nwfa-nwfas
+         dtnifa=nifa-nifas
+         nc=ncs
+         nwfa=nwfas
+         nifa=nifas
+       endif
+     else
+       dtt=0.
+       dtqv=0.
+       dtqc=0.
+       dtqr=0.
+       dtqi=0.
+       dtqs=0.
+       dtqg=0.
+       dtni=0.
+       dtnr=0.
+       if (is_aerosol_aware .or. merra2_aerosol_aware) then
+         dtnc=0.
+         dtnwfa=0.
+         dtnifa=0.
+       endif
+     endif
+      
       do it = 1, ndt
 
       qc_max = 0.
@@ -1355,22 +1439,23 @@ MODULE module_mp_thompson
 
          do k = kts, kte
             if (present(tt)) then
-               t1d(k) = tt(i,k,j)
+               t1d(k) = tt(i,k,j)+dtt(i,k,j)/float(ndt)
             else
                t1d(k) = th(i,k,j)*pii(i,k,j)
             end if
             p1d(k) = p(i,k,j)
-            w1d(k) = w(i,k,j)
             dz1d(k) = dz(i,k,j)
-            qv1d(k) = qv(i,k,j)
-            qc1d(k) = qc(i,k,j)
-            qi1d(k) = qi(i,k,j)
-            qr1d(k) = qr(i,k,j)
-            qs1d(k) = qs(i,k,j)
-            qg1d(k) = qg(i,k,j)
-            ni1d(k) = ni(i,k,j)
-            nr1d(k) = nr(i,k,j)
+            qv1d(k) = qv(i,k,j)+dtqv(i,k,j)/float(ndt)
+            qc1d(k) = qc(i,k,j)+dtqc(i,k,j)/float(ndt)
+            qi1d(k) = qi(i,k,j)+dtqi(i,k,j)/float(ndt)
+            qr1d(k) = qr(i,k,j)+dtqr(i,k,j)/float(ndt)
+            qs1d(k) = qs(i,k,j)+dtqs(i,k,j)/float(ndt)
+            qg1d(k) = qg(i,k,j)+dtqg(i,k,j)/float(ndt)
+            ni1d(k) = ni(i,k,j)+dtni(i,k,j)/float(ndt)
+            nr1d(k) = nr(i,k,j)+dtnr(i,k,j)/float(ndt)
             rho(k) = 0.622*p1d(k)/(R*t1d(k)*(qv1d(k)+0.622))
+            w1d(k) = -omega(i,k,j)/(rho(k)*con_g)
+
 
             ! These arrays are always allocated and must be initialized
             !vtsk1(k) = 0.
@@ -1418,9 +1503,9 @@ MODULE module_mp_thompson
          enddo
          if (is_aerosol_aware .or. merra2_aerosol_aware) then
             do k = kts, kte
-               nc1d(k) = nc(i,k,j)
-               nwfa1d(k) = nwfa(i,k,j)
-               nifa1d(k) = nifa(i,k,j)
+               nc1d(k) = nc(i,k,j)+dtnc(i,k,j)/float(ndt)
+               nwfa1d(k) = nwfa(i,k,j)+dtnwfa(i,k,j)/float(ndt)
+               nifa1d(k) = nifa(i,k,j)+dtnifa(i,k,j)/float(ndt)
             enddo
          else
             lsml = lsm(i,j)
@@ -1730,6 +1815,20 @@ MODULE module_mp_thompson
 !         'nr: ', nr_max, '(', imax_nr, ',', jmax_nr, ',', kmax_nr, ')'
 ! END DEBUG - GT
       enddo ! end of nt loop
+      deallocate (dtt)
+      deallocate (dtqv)
+      deallocate (dtqc)
+      deallocate (dtqr)
+      deallocate (dtqi)
+      deallocate (dtqs)
+      deallocate (dtqg)
+      deallocate (dtni)
+      deallocate (dtnr)
+      if (is_aerosol_aware .or. merra2_aerosol_aware) then
+         deallocate (dtnc)
+         deallocate (dtnwfa)
+         deallocate (dtnifa)
+      endif
 
       do j = j_start, j_end
         do k = kts, kte
