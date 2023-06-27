@@ -1308,7 +1308,9 @@ MODULE module_mp_thompson
       endif
      if (ndt .gt. 1) then
        dtt=tt-tts
+       tt=tts
        dtqv=qv-spechums/(1.0_kind_phys-spechums)
+       qv=spechums/(1.0_kind_phys-spechums)
        if (convert_dry_rho) then 
         dtqc=qc-qcs/(1.0_kind_phys-spechums)
         dtqr=qr-qrs/(1.0_kind_phys-spechums)
@@ -1317,6 +1319,13 @@ MODULE module_mp_thompson
         dtqg=qg-qgs/(1.0_kind_phys-spechums)
         dtni=ni-nis/(1.0_kind_phys-spechums)
         dtnr=nr-nrs/(1.0_kind_phys-spechums)
+        qc=qcs/(1.0_kind_phys-spechums)
+        qr=qrs/(1.0_kind_phys-spechums)
+        qi=qis/(1.0_kind_phys-spechums)
+        qs=qss/(1.0_kind_phys-spechums)
+        qg=qgs/(1.0_kind_phys-spechums)
+        ni=nis/(1.0_kind_phys-spechums)
+        nr=nrs/(1.0_kind_phys-spechums)
        else
         dtqc=qc-qcs
         dtqr=qr-qrs
@@ -1325,16 +1334,14 @@ MODULE module_mp_thompson
         dtqg=qg-qgs
         dtni=ni-nis
         dtnr=nr-nrs
+        qc=qcs
+        qr=qrs
+        qi=qis
+        qs=qss
+        qg=qgs
+        ni=nis
+        nr=nrs
        endif
-       tt=tts
-       qv=spechums/(1.0_kind_phys-spechums)
-       qc=qcs
-       qr=qrs
-       qi=qis
-       qs=qss
-       qg=qgs
-       ni=nis
-       nr=nrs
        
        if (is_aerosol_aware .or. merra2_aerosol_aware) then
          dtnc=nc-ncs
