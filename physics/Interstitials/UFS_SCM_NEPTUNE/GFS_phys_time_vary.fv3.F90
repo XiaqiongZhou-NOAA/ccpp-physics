@@ -880,6 +880,16 @@
 
 !> - Update stratospheric h2o concentration.
          if (h2o_phys) then
+            n2 = h2ophys%ntime + 1
+            do j=2,h2ophys%ntime
+               if (rjday < h2ophys%time(j)) then
+                  n2 = j
+                      exit
+               endif
+            enddo
+           n1 = n2 - 1
+           if (n2 > h2ophys%ntime) n2 = n2 - h2ophys%ntime
+
             call h2ophys%update(jindx1_h, jindx2_h, ddy_h, rjday, n1, n2, h2opl)
          endif
 
